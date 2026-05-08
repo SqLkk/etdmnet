@@ -108,27 +108,25 @@ The test suite covers:
 
 ## Android game integration
 
-### 1. Dependency (JitPack)
+### 1. Add as a local module (no internet needed)
 
-In your game's `settings.gradle.kts`:
+**`settings.gradle.kts`** of your game project:
 ```kotlin
-dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url = uri("https://jitpack.io") }
-    }
-}
+include(":etdmnet")
+project(":etdmnet").projectDir = File("../TEZ/new_lib/etdmnet")
+// adjust the path to wherever etdmnet lives on your machine
 ```
 
-In `app/build.gradle.kts`:
+**`app/build.gradle.kts`**:
 ```kotlin
 dependencies {
-    implementation("com.github.SqLkk:etdmnew:0.1.0")
+    implementation(project(":etdmnet"))
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
 ```
+
+That's it — Android Studio compiles the library directly from source. No JitPack, no JAR export, changes you make to etdmnet reflect immediately.
 
 ### 2. Copy the Android adapter
 
