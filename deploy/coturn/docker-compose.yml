@@ -1,0 +1,48 @@
+version: "3.8"
+
+# coturn TURN/STUN server for etdmnet.
+#
+# This compose file is intentionally small: a single coturn instance with
+# long-term-credential auth (lt-cred-mech) suitable for both development and
+# small-to-medium production deployments.
+#
+# Quick start (development):
+#   1. Generate a long static secret:
+#         openssl rand -hex 32 > .turn-secret
+#   2. Export environment variables:
+#         export TURN_REALM=turn.example.com
+#         export TURN_SECRET=$(cat .turn-secret)
+#         export TURN_EXTERNAL_IP=<your public IPv4>
+#   3. Bring it up:
+#         docker compose up -d
+#   4. From your app, build credentials using HMAC-SHA1 in your backend
+#      (see README.md in this directory for sample Python/Kotlin code).
+#
+# Production notes:
+#   - Open UDP/TCP 3478 and TCP 5349 on your firewall.
+#   - Open UDP port range 49152-65535 (TURN relay allocations).
+#   - For TLS (TURNS), mount real certificates at /etc/coturn/certs.
+#   - Run behind a reverse proxy ONLY for the metrics port; the TURN protocol
+#     must reach coturn directly (it is not HTTP).
+
+services:
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host    # required: coturn allocates many ports
+    environment:
+      TURN_REALM: ${TURN_REALM:-turn.example.com}
+      TURN_SECRET: ${TURN_SECRET:?Set TURN_SECRET to a long random string}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?Set TURN_EXTERNAL_IP to your public IPv4}
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+      - turn-data:/var/lib/coturn
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --realm=${TURN_REALM}
+      --static-auth-secret=${TURN_SECRET}
+      --external-ip=${TURN_EXTERNAL_IP}
+
+volumes:
+  turn-data: {}

@@ -4,3 +4,8 @@ build/
 *.iml
 local.properties
 captures/
+
+# IDE outputs
+bin/
+out/
+.DS_Store

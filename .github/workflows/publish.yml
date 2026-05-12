@@ -1,0 +1,56 @@
+name: Publish to Maven Central
+
+# Triggered when a release tag (vX.Y.Z or vX.Y.Z-beta) is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # Run unit tests before publishing — never push a broken release.
+      - name: Run tests
+        run: gradle :core:test --no-daemon
+
+      # Publish JVM modules to Sonatype OSSRH staging.
+      # Required GitHub repository secrets:
+      #   OSSRH_USERNAME       — Sonatype JIRA username
+      #   OSSRH_PASSWORD       — Sonatype JIRA password (or user token)
+      #   SIGNING_KEY          — ASCII-armored PGP private key
+      #   SIGNING_PASSWORD     — passphrase for that key
+      - name: Publish
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          gradle \
+            :core:publishReleasePublicationToSonatypeRepository \
+            :signaling-ktor:publishReleasePublicationToSonatypeRepository \
+            :transport-webrtc-jvm:publishReleasePublicationToSonatypeRepository \
+            --no-daemon --stacktrace
+
+      # After this workflow finishes successfully, log in to s01.oss.sonatype.org
+      # and "Close + Release" the staging repository. (Automating that step
+      # requires the io.github.gradle-nexus.publish-plugin; left manual for now
+      # because the first release is usually done with a human in the loop.)

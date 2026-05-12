@@ -1,248 +1,381 @@
 # etdmnet
 
-A relay-free, ETDM-inspired peer-to-peer runtime for 4-player mobile games on
-the JVM and Android. The library implements the host-election, host-migration
-and link-scoring layer; it is **transport-agnostic** and ships with an
-in-memory `LoopbackTransport` for unit testing and for replaying the
-synchronous-round model from the parent thesis.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+![Status: Beta](https://img.shields.io/badge/status-beta-orange)
+![Version: 0.4.0-beta](https://img.shields.io/badge/version-0.4.0--beta-blueviolet)
 
-> **Not a TURN, not a relay.** `etdmnet` does not forward bytes for you. It
-> sits *above* a real peer-to-peer transport (WebRTC DataChannels, raw UDP,
-> Android Nearby Connections, BLE mesh, …) and decides *who* should be the
-> session host, *when* to fail over, and *with what confidence*.
+**Data-relay-free peer-to-peer multiplayer for Kotlin** — let any player (phone or
+PC) become the host, with automatic host election and migration powered by the
+ETDM (EWMA-Based Topology and Distributed Migration) protocol.
 
-## What problem does it solve?
+> ⚠️ **Beta release.** The API surface is stable enough to consume; we do not
+> recommend the `1.0` label until TURN integration ships as a first-class
+> module and the iOS transport lands. Pin to a specific version in production.
 
-In a typical 4-player mobile game one device acts as the authoritative host.
-On mobile networks, that device may at any moment:
+## ⚠️ Without TURN, you will lose users
 
-- hand off Wi-Fi → cellular and lose its public address,
-- enter a hostile NAT,
-- run out of battery,
-- or simply walk out of range.
+`etdmnet` connects peers directly over WebRTC. That is fast and cheap, but
+**Symmetric NAT** — used by a meaningful fraction of mobile carriers, especially
+on CGNAT — cannot be traversed with STUN alone. In practice this means:
 
-Without a dedicated TURN relay the session needs to *re-elect* a host
-on-device. `etdmnet` does that with the same machinery the parent thesis uses
-for its discovery protocol: an EWMA-smoothed link-quality score
-($\lambda = 0.3$), a sigmoid confidence transform ($\alpha = 2.0$),
-hysteresis ($\eta = 0.1$), and a strictly-monotone *epoch* counter that
-prevents split-brain after a migration.
+* On Wi‑Fi ↔ Wi‑Fi: typically >95% connect success with STUN only.
+* On mobile ↔ mobile across carriers: often **60–80%** with STUN only.
+* With a TURN server in the ICE list: effectively **~100%** (TURN is a
+  guaranteed relay fallback).
 
-## Architecture at a glance
+If your app targets a real audience on mobile data, **deploy TURN**. The
+library already accepts a custom `iceServers` list — see
+[TURN integration](#turn-integration-recommended) below. Suggested options:
 
-```
-Application
-    │  sendApplication / sendToHost / onRoleChange / onHostChange
-    ▼
-┌──────────────── runtime.Session ────────────────┐
-│                                                 │
-│  HostElector  ──►  HostSnapshot(epoch, hostId)  │
-│  HandshakeMachine (PROPOSE / ACCEPT / CONFIRM)  │
-│  EwmaScore per remote peer                      │
-│                                                 │
-└─────────────────────────────────────────────────┘
-                    │  PeerMessage (sealed)
-                    ▼
-              transport.Transport
-              ├── LoopbackTransport (tests / sim)
-              ├── WebRtcTransport (planned)
-              └── NearbyTransport (planned)
-                    │
-                    ▼
-              signaling.Signaling
-              (QR / mDNS / out-of-band, never a relay)
-```
+* Self-host [`coturn`](https://github.com/coturn/coturn) on a small VPS
+* Cloudflare Calls TURN
+* Twilio Network Traversal Service
 
-## Quickstart
+Without TURN, advertise `etdmnet` as “LAN / co-op / Wi‑Fi multiplayer”, not
+“global mobile multiplayer”. Use the bundled
+[host eligibility probe](#host-eligibility-api) to detect Symmetric NAT and
+gate the host-creation flow.
 
-```kotlin
-val bus = Bus()                                // shared in-process bus
-val transport = LoopbackTransport(PeerId("alice"), bus)
-val session = Session(
-    sessionId = "game-1",
-    transport = transport,
-    clock = SystemClock,
-    config = EtdmConfig(),                     // thesis defaults
-)
 
-session.onRoleChange { role -> println("now $role") }
-session.onHostChange { snap -> println("host=${snap.hostId}@${snap.hostEpoch}") }
+> **Why?** Kotlin/Android multiplayer libraries today push every packet through
+> a relay server. That's fine for hobby games but turns into a real bill when
+> you have hundreds of concurrent players. `etdmnet` keeps the data plane
+> peer-to-peer — the only thing that ever touches a server is a tiny SDP/ICE
+> handshake (a few KB per join). Game traffic flows phone↔phone over WebRTC
+> DataChannels, even on mobile networks.
 
-// Game loop:
-while (running) {
-    val outcome = session.tick()
-    for (msg in outcome.deliveredApplicationMessages) handle(msg)
-    if (session.role == Role.HOST) sendWorldState()
-    Thread.sleep(EtdmConfig().tickIntervalMs)
-}
-```
+> **Important terminology:** `etdmnet` is **data-relay-free**, not serverless.
+> A signaling server is still required for rendezvous and SDP/ICE exchange.
+> Without signaling, peers cannot discover each other on the public internet.
 
-## Mapping to the thesis
+## Status
 
-| Thesis symbol            | `EtdmConfig` field            | Default |
-|--------------------------|-------------------------------|---------|
-| EWMA learning rate $\lambda$ | `lambda`                  | 0.3     |
-| Sigmoid sharpness $\alpha$   | `alpha`                   | 2.0     |
-| Hysteresis margin $\eta$     | `eta`                     | 0.1     |
-| Propose timeout $T$          | `proposeTimeoutTicks`     | 5       |
-| Heartbeat timeout $T_{hb}$   | `heartbeatTimeoutTicks`   | 15      |
-| Hello interval               | `helloIntervalTicks`      | 3       |
+* ✅ Pure-Kotlin core, 9/9 unit tests green
+* ✅ JVM WebRTC transport (Windows / macOS / Linux)
+* ✅ Android WebRTC transport (opt-in)
+* ✅ Runnable Ktor signaling server (Docker-friendly, ~50 MB RAM)
+* ✅ Auto host election & migration (ETDM-Net protocol, MSc thesis)
+* 🧪 iOS transport (Swift bridge, 0.4 preview — see `transport-webrtc-ios-bridge/`)
+* ✅ TURN integration (first-class `:turn-bundled` module + `deploy/coturn/` recipe)
 
-The invariant $T_{hb} > T$ (Lemma K1) is enforced in `EtdmConfig.init`.
+## Modules
 
-## Testing
+| Module                       | What it gives you                                       |
+| ---------------------------- | ------------------------------------------------------- |
+| `:core`                      | `EtdmNet.join(...)`, `EtdmHost`, host election runtime  |
+| `:signaling-ktor`            | Ktor WebSocket signaling protocol + client              |
+| `:signaling-server`          | Runnable signaling server (`./gradlew :signaling-server:run`) |
+| `:transport-webrtc-jvm`      | Desktop/PC WebRTC transport (`webrtc-java`)             |
+| `:transport-webrtc-android`  | Android WebRTC transport (opt-in via Gradle property)   |
+| `:samples:jvm-chat`          | 50-line cross-platform chat demo                        |
 
-```bash
-# Java 17 toolchain is required (configured via gradle.properties).
-gradle test
-```
+## Quick start (PC ↔ PC)
 
-The test suite covers:
+1. **Start a signaling server** (locally or any cheap VPS):
 
-- `HealthSampleTest` — bounded, monotone link-quality mapping,
-- `EwmaScoreTest` — smoothing and convergence,
-- `HostElectorTest` — hysteresis, stability ticks, fail-over,
-- `FourPeerSessionTest` — full simulation: 4 peers converge, then the host
-  is isolated (Wi-Fi → cellular handover) and migration completes with a
-  strictly-greater epoch, also under 30 % packet loss.
+   ```bash
+   ./gradlew :signaling-server:run
+   # listens on :8080, path /ws/v1
+   ```
 
-## Android game integration
+2. **Run two chat clients** in separate terminals:
 
-### 1. Add as a local module (no internet needed)
+   ```bash
+   ./gradlew :samples:jvm-chat:run --args="ws://localhost:8080/ws/v1 lobby alice"
+   ./gradlew :samples:jvm-chat:run --args="ws://localhost:8080/ws/v1 lobby bob"
+   ```
 
-**`settings.gradle.kts`** of your game project:
-```kotlin
-include(":etdmnet")
-project(":etdmnet").projectDir = File("../TEZ/new_lib/etdmnet")
-// adjust the path to wherever etdmnet lives on your machine
-```
+3. Type lines. Messages flow **directly between the two JVMs over WebRTC**.
+   Watch the role logs: one peer becomes `HOST`, the other `CLIENT`. Kill the
+   host — the other peer transparently takes over.
 
-**`app/build.gradle.kts`**:
+## Quick start (Android ↔ Android or Android ↔ PC)
+
+In your Android app's `build.gradle.kts`:
+
 ```kotlin
 dependencies {
-    implementation(project(":etdmnet"))
-    implementation("com.google.android.gms:play-services-nearby:19.3.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("dev.etdmnet:etdmnet-core:0.4.0-beta")
+    implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.0-beta")
+    implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.0-beta")
+    implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.0-beta")   // recommended
 }
 ```
 
-That's it — Android Studio compiles the library directly from source. No JitPack, no JAR export, changes you make to etdmnet reflect immediately.
-
-### 2. Copy the Android adapter
-
-Copy these two files from `android-adapter/` to your game's Android source tree and adjust the `package` line:
-
-| File | Purpose |
-|------|---------|
-| `NearbyRawPeerLink.kt` | Implements `RawPeerLink` via Google Nearby Connections (WiFi Direct / BLE, no relay) |
-| `EtdmNetRunner.kt` | Coroutine game loop, exposes `StateFlow<Role>` + `StateFlow<HostSnapshot>` |
-
-### 3. Wire it up in your NetworkManager
+In your code:
 
 ```kotlin
-class NetworkManager(context: Context, private val scope: CoroutineScope) {
+val transport = AndroidWebRtcTransport.connect(
+    context      = applicationContext,
+    signalingUrl = "wss://your-signaler.example.com/ws/v1",
+    roomId       = "lobby-42",
+    localPeerId  = EtdmNet.newPeerId("phone"),
+)
+val net = EtdmNet.join(roomId = "lobby-42", transport = transport)
 
-    private val peerId  = EtdmNet.newPeerId("player")
-    private val link    = NearbyRawPeerLink(context, peerId)
-    private val session = EtdmNet.createSession(sessionId = "room-123", link = link)
-    val runner          = EtdmNetRunner(session, scope)
+// Observe
+lifecycleScope.launch { net.role.collect    { role  -> /* HOST / CLIENT */ } }
+lifecycleScope.launch { net.peers.collect   { peers -> /* who's online */ } }
+lifecycleScope.launch { net.messages.collect { msg  -> handle(msg.from, msg.payload) } }
 
-    fun joinLobby() {
-        link.start("room-123")  // starts advertising + discovery
-        runner.start()          // starts tick loop at 100 ms
-    }
-
-    fun leaveGame() {
-        runner.stop()
-        link.stop()
-    }
-}
+// Send
+if (net.isHost) net.publishAsHost(stateBytes)   // host → everyone
+else            net.broadcast(actionBytes)      // client → current host
 ```
 
-### 4. React to host changes in UI
+A PC peer using `:transport-webrtc-jvm` joining the same `roomId` will appear
+in `net.peers` and exchange messages identically. Host election treats phones
+and PCs uniformly — whichever peer has the best link quality wins.
+
+## How it works
+
+```
+┌──────────┐                        ┌──────────┐
+│ Phone A  │                        │ Phone B  │
+│ (HOST)   │◄══════ WebRTC ═══════► │ (CLIENT) │
+└────┬─────┘   DataChannel (P2P)    └─────┬────┘
+     │                                    │
+     │      ┌─────────────────┐           │
+     └─────►│ Signaling       │◄──────────┘
+            │ Server (Ktor)   │
+            │ ─ rendezvous    │
+            │ ─ SDP/ICE relay │
+            │ ─ NEVER sees    │
+            │   game data     │
+            └─────────────────┘
+```
+
+The server is **only** consulted during the WebRTC handshake (typically <1 KB
+per join). All game state and inputs flow over the direct DataChannels. If the
+elected host disconnects, ETDM's EWMA-scored health samples drive a new
+election; the new host inherits the session within a few ticks.
+
+## Production readiness checklist
+
+If you plan to publish a real game, treat these as required:
+
+1. Deploy signaling on a reliable public endpoint (`wss://...`).
+2. Add TURN servers for strict/symmetric NAT users.
+3. Run host-eligibility probe in lobby and block weak hosts.
+4. Keep at least one non-mobile candidate (desktop or Wi-Fi) available as host fallback.
+
+Without TURN, a significant fraction of mobile users behind strict CGNAT will
+fail to connect to some peers. This is a WebRTC/NAT reality, not ETDM logic.
+
+## TURN integration (recommended)
+
+> **New in 0.3 / 0.4:** the dedicated `:turn-bundled` module gives you a
+> platform-neutral builder API (`TurnConfig`) plus a ready-to-run coturn
+> docker-compose deployment under [`deploy/coturn/`](deploy/coturn/) — with
+> a worked HMAC-SHA1 credential-issuer example in
+> [`deploy/coturn/README.md`](deploy/coturn/README.md).
+
+### Quick start with `TurnConfig`
 
 ```kotlin
-lifecycleScope.launch {
-    runner.roleState.collect { role ->
-        when (role) {
-            Role.HOST        -> enableHostUI()
-            Role.BACKUP_HOST -> showBackupBadge()
-            Role.CLIENT      -> enableClientUI()
-        }
-    }
-}
+import dev.etdmnet.turn.TurnConfig
+import dev.etdmnet.transport.webrtc.toJvmIceServers   // JVM
+// import dev.etdmnet.transport.webrtc.android.toAndroidIceServers  // Android
 
-lifecycleScope.launch {
-    runner.appMessages.collect { payloads ->
-        payloads.forEach { bytes -> applyGameState(bytes) }
-    }
-}
+val turn = TurnConfig.builder()
+    .addPublicStuns()
+    .addTurn("turn.example.com", username = creds.username, credential = creds.credential)
+    .addTurns("turn.example.com", username = creds.username, credential = creds.credential)
+    .build()
+
+val iceServers = turn.toJvmIceServers()   // or .toAndroidIceServers()
 ```
 
-### 5. Send game data
+`TurnCredentials` (returned by your backend's HMAC-SHA1 issuer — see the
+recipe in `deploy/coturn/README.md`) has a one-call `.toTurnConfig()`.
+
+### Manual ICE server lists (still supported)
+
+`etdmnet` also accepts raw ICE server lists. Add TURN alongside STUN:
+
+JVM transport:
 
 ```kotlin
-// In host game loop
-if (runner.roleState.value == Role.HOST) {
-    runner.broadcastGameState(gameState.toBytes())
+val turn = RTCIceServer().apply {
+    urls.add("turn:turn.example.com:3478?transport=udp")
+    username = "turn-user"
+    credential = "turn-pass"
 }
 
-// In client input handler
-runner.sendToHost(playerInput.toBytes())
-```
-
-### 6. Test with 4 Android Studio emulators
-
-1. Open **Device Manager** → create 4 Pixel emulators (API 33+, with Google Play).
-2. Boot all 4. Android Studio shows them in the **Running Devices** tab.
-3. In **Run → Edit Configurations** duplicate your run config 4 times, each targeting a different emulator.
-4. On emulators Nearby Connections uses the host machine's virtual WiFi bridge — all 4 share the same network segment, so P2P works without any router.
-5. Launch all 4 copies. Watch logs for `NearbyRawPeerLink: Connected to …` lines, then look for `onHostChange` callbacks settling on the same `hostId`.
-
-> **Tip — Inspect in real time:** `adb -s emulator-5554 logcat -s NearbyRawPeerLink EtdmNet`
-
-### 7. Required Android permissions
-
-Add to `AndroidManifest.xml` (inside `<manifest>`):
-```xml
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
-<uses-permission android:name="android.permission.BLUETOOTH"/>
-<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
-<!-- Android 12+ -->
-<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-    android:usesPermissionFlags="neverForLocation"/>
-<!-- Android 13+ -->
-<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
-    android:usesPermissionFlags="neverForLocation"/>
-```
-
-Request permissions at runtime before calling `link.start()`:
-```kotlin
-ActivityCompat.requestPermissions(
-    activity,
-    arrayOf(
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.BLUETOOTH_SCAN,
-        Manifest.permission.BLUETOOTH_ADVERTISE,
-        Manifest.permission.BLUETOOTH_CONNECT,
-        Manifest.permission.NEARBY_WIFI_DEVICES,
-    ),
-    REQUEST_CODE_PERMISSIONS,
+val transport = WebRtcTransport.connect(
+    signalingUrl = "wss://signal.example.com/ws/v1",
+    roomId = "lobby-42",
+    localPeerId = EtdmNet.newPeerId("pc"),
+    iceServers = WebRtcTransport.DEFAULT_ICE_SERVERS + turn,
 )
 ```
 
-## Roadmap
+Android transport:
 
-1. `WebRtcTransport` adapter (Android + JVM via google/webrtc).
-2. `NearbyTransport` adapter for Android Nearby Connections.
-3. Cross-peer reputation gossip (uses the existing `HealthReport` message).
-4. Epoch-stamped state-snapshot delivery so a freshly-elected host can
-   reconstruct game state from the previous host's last heartbeat.
+```kotlin
+val turn = PeerConnection.IceServer.builder("turn:turn.example.com:3478?transport=udp")
+    .setUsername("turn-user")
+    .setPassword("turn-pass")
+    .createIceServer()
+
+val transport = AndroidWebRtcTransport.connect(
+    context = applicationContext,
+    signalingUrl = "wss://signal.example.com/ws/v1",
+    roomId = "lobby-42",
+    localPeerId = EtdmNet.newPeerId("phone"),
+    iceServers = AndroidWebRtcTransport.DEFAULT_ICE_SERVERS + turn,
+)
+```
+
+Suggested TURN providers:
+
+* Self-hosted `coturn` (lowest cost, full control)
+* Cloudflare Calls TURN
+* Twilio Network Traversal Service
+
+## Host eligibility API
+
+Use this probe before allowing a player to create a room:
+
+```kotlin
+val report = EtdmNet.checkHostEligibility()
+if (report.verdict == HostVerdict.INELIGIBLE) {
+    showMessage(report.reason)
+    disableCreateRoom()
+}
+```
+
+The report includes NAT type, verdict, human-readable reason, and a `0..100`
+host-score hint.
+
+## Platform scope (important)
+
+Current transport support:
+
+* JVM desktop/server: supported
+* Android: supported (opt-in module)
+* iOS: not yet implemented
+
+So, today this repository is best described as **Kotlin/JVM + Android ready**,
+not full KMP-native transport complete.
+
+## KMP and native WebRTC note
+
+If your app is Kotlin Multiplatform, keep transport dependencies target-scoped
+(`androidMain`, `jvmMain`) and avoid expecting one shared native binary setup
+to work for all targets automatically. Native classifier handling differs by
+platform and packaging strategy.
+
+## Building
+
+* JDK 17+
+* Gradle 9.x
+
+```bash
+gradle build              # JVM modules
+gradle :core:test         # unit tests
+```
+
+Android transport is opt-in (requires AGP + Android SDK):
+
+```bash
+gradle build -Petdmnet.includeAndroid=true
+```
+
+## Public API surface
+
+The library exposes a deliberately small surface:
+
+```kotlin
+object EtdmNet {
+    fun newPeerId(prefix: String = "player"): PeerId
+    suspend fun checkHostEligibility(
+        stunServers: List<String> = HostEligibility.DEFAULT_STUN_SERVERS,
+        timeoutMillis: Long = 3000L,
+    ): EligibilityReport
+    fun join(
+        roomId: String,
+        transport: RawPeerLink,
+        scope: CoroutineScope? = null,
+        config: EtdmConfig = EtdmConfig(),
+        clock: Clock = SystemClock,
+    ): EtdmHost
+}
+
+class EtdmHost : AutoCloseable {
+    val localPeerId: PeerId
+    val role: StateFlow<Role>            // HOST / BACKUP_HOST / CLIENT
+    val host: StateFlow<HostSnapshot?>
+    val peers: StateFlow<Set<PeerId>>
+    val messages: SharedFlow<IncomingMessage>
+    val isHost: Boolean
+
+    fun broadcast(payload: ByteArray): Boolean      // CLIENT → host
+    fun publishAsHost(payload: ByteArray): Int      // HOST   → all
+    fun forcePublish(payload: ByteArray): Int
+    fun sendTo(target: PeerId, payload: ByteArray)
+    override fun close()
+}
+```
+
+Everything else (`Session`, `HostElector`, `PeerMessage`, transport internals)
+is implementation detail — touch only if you want to plug in a custom
+transport.
+
+## Publishing (Maven)
+
+### Local validation
+
+```bash
+gradle publishToMavenLocal
+```
+
+This writes signed-or-unsigned artifacts to `~/.m2/repository/dev/etdmnet/…`.
+No credentials required.
+
+### Private repo (Nexus / Artifactory / GitHub Packages)
+
+Set the following environment variables, then `gradle publish`:
+
+* `MAVEN_REPO_URL`
+* `MAVEN_REPO_USERNAME`
+* `MAVEN_REPO_PASSWORD`
+
+### Maven Central (Sonatype OSSRH + GPG signing)
+
+The Gradle build wires the OSSRH staging endpoint **and** GPG signing automatically
+when these environment variables are present:
+
+| Variable           | What it is                                     |
+| ------------------ | ---------------------------------------------- |
+| `OSSRH_USERNAME`   | Sonatype JIRA username (or user token name)    |
+| `OSSRH_PASSWORD`   | Sonatype JIRA password (or user token value)   |
+| `SIGNING_KEY`      | ASCII-armored PGP private key (single line OK) |
+| `SIGNING_PASSWORD` | Passphrase for that PGP key                    |
+
+The shipped GitHub Actions workflow [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
+publishes the three JVM modules to Sonatype on every `v*` tag push. After it
+succeeds, log in to `s01.oss.sonatype.org` and **Close + Release** the staging
+repository to promote artifacts to Central.
+
+> The Android transport (`:transport-webrtc-android`) requires AGP and is
+> published from a build with `-Petdmnet.includeAndroid=true`. It is not yet
+> wired into the standard release tag flow.
+
+## Writing your own transport
+
+Implement [`RawPeerLink`](core/src/main/kotlin/dev/etdmnet/transport/RawPeerLink.kt).
+The interface is intentionally tiny: 5 methods. You can build adapters for
+Bluetooth LE, local UDP, libp2p, Nearby Connections, etc., and the rest of the
+stack stays unchanged.
 
 ## License
 
-TBD by the author.
+Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for the
+full text. You can use, modify and redistribute `etdmnet` in commercial or
+open-source projects as long as you retain the copyright and license notice.
+
+## Citation
+
+Based on the MSc thesis *"EWMA-Based Topology and Distributed Migration for
+Peer-Hosted Multiplayer"*. Citation BibTeX will be added on first release.
