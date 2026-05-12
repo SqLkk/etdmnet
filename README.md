@@ -118,13 +118,13 @@ repositories {
 
 dependencies {
     // Coordinates when consumed from GitHub Packages / future Maven Central:
-    implementation("dev.etdmnet:etdmnet-core:0.4.0-beta")
-    implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.0-beta")
-    implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.0-beta")
-    implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.0-beta")   // recommended
+    implementation("dev.etdmnet:etdmnet-core:0.4.1-beta")
+    implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.1-beta")
+    implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.1-beta")
+    implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.1-beta")   // recommended
 
     // OR — coordinates when consumed from JitPack:
-    // implementation("com.github.SqLkk.etdmnew:core:v0.4.0-beta")
+    // implementation("com.github.SqLkk.etdmnet:core:v0.4.1-beta")
 }
 ```
 
