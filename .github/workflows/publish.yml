@@ -48,6 +48,7 @@ jobs:
             :core:publishReleasePublicationToSonatypeRepository \
             :signaling-ktor:publishReleasePublicationToSonatypeRepository \
             :transport-webrtc-jvm:publishReleasePublicationToSonatypeRepository \
+            :turn-bundled:publishReleasePublicationToSonatypeRepository \
             --no-daemon --stacktrace
 
       # After this workflow finishes successfully, log in to s01.oss.sonatype.org

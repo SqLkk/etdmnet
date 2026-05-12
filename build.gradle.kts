@@ -79,17 +79,19 @@ subprojects {
 
             // Maven Central via Sonatype OSSRH (s01.oss.sonatype.org).
             // Required env: OSSRH_USERNAME, OSSRH_PASSWORD.
+            // Repository is always registered so the publish task exists at
+            // configure time. Missing credentials will simply fail at execute time.
             val ossrhUser = providers.environmentVariable("OSSRH_USERNAME").orNull
             val ossrhPass = providers.environmentVariable("OSSRH_PASSWORD").orNull
-            if (!ossrhUser.isNullOrBlank() && !ossrhPass.isNullOrBlank()) {
-                repositories {
-                    maven {
-                        name = "sonatype"
-                        val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
-                        url = uri(
-                            if (isSnapshot) "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-                            else "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-                        )
+            repositories {
+                maven {
+                    name = "sonatype"
+                    val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
+                    url = uri(
+                        if (isSnapshot) "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+                        else "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+                    )
+                    if (!ossrhUser.isNullOrBlank() && !ossrhPass.isNullOrBlank()) {
                         credentials {
                             username = ossrhUser
                             password = ossrhPass
