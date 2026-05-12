@@ -2,7 +2,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Status: Beta](https://img.shields.io/badge/status-beta-orange)
-![Version: 0.4.1-beta](https://img.shields.io/badge/version-0.4.1--beta-blueviolet)
+![Version: 0.4.2-beta](https://img.shields.io/badge/version-0.4.2--beta-blueviolet)
 [![CI](https://github.com/SqLkk/etdmnet/actions/workflows/publish.yml/badge.svg)](https://github.com/SqLkk/etdmnet/actions/workflows/publish.yml)
 [![JitPack](https://jitpack.io/v/SqLkk/etdmnet.svg)](https://jitpack.io/#SqLkk/etdmnet)
 
@@ -118,13 +118,13 @@ repositories {
 
 dependencies {
     // Coordinates when consumed from GitHub Packages / future Maven Central:
-    implementation("dev.etdmnet:etdmnet-core:0.4.1-beta")
-    implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.1-beta")
-    implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.1-beta")
-    implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.1-beta")   // recommended
+    implementation("dev.etdmnet:etdmnet-core:0.4.2-beta")
+    implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.2-beta")
+    implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.2-beta")
+    implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.2-beta")   // recommended
 
     // OR — coordinates when consumed from JitPack:
-    // implementation("com.github.SqLkk.etdmnet:core:v0.4.1-beta")
+    // implementation("com.github.SqLkk.etdmnet:core:v0.4.2-beta")
 }
 ```
 

@@ -14,7 +14,7 @@ allprojects {
     group = "dev.etdmnet"
     // Beta release: API surface is stable enough to consume but not yet 1.0.
     // Production users MUST also deploy a TURN server (see README).
-    version = "0.4.1-beta"
+    version = "0.4.2-beta"
 }
 
 subprojects {
