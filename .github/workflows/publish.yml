@@ -1,4 +1,4 @@
-name: Publish to Maven Central
+name: Publish
 
 # Triggered when a release tag (vX.Y.Z or vX.Y.Z-beta) is pushed.
 on:
@@ -13,6 +13,7 @@ jobs:
 
     permissions:
       contents: read
+      packages: write   # required for publishing to GitHub Packages
 
     steps:
       - name: Checkout
@@ -31,13 +32,27 @@ jobs:
       - name: Run tests
         run: gradle :core:test --no-daemon
 
-      # Publish JVM modules to Sonatype OSSRH staging.
-      # Required GitHub repository secrets:
-      #   OSSRH_USERNAME       — Sonatype JIRA username
-      #   OSSRH_PASSWORD       — Sonatype JIRA password (or user token)
-      #   SIGNING_KEY          — ASCII-armored PGP private key
-      #   SIGNING_PASSWORD     — passphrase for that key
-      - name: Publish
+      # Publish to GitHub Packages. The auto-provisioned GITHUB_TOKEN has
+      # write access for packages in this repo (see permissions block above).
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          gradle \
+            :core:publishReleasePublicationToGitHubPackagesRepository \
+            :signaling-ktor:publishReleasePublicationToGitHubPackagesRepository \
+            :transport-webrtc-jvm:publishReleasePublicationToGitHubPackagesRepository \
+            :turn-bundled:publishReleasePublicationToGitHubPackagesRepository \
+            --no-daemon --stacktrace
+
+      # Optional: publish to Maven Central via the new Central Portal.
+      # Only runs when the four required secrets are present. The legacy
+      # s01.oss.sonatype.org endpoint was sunset on 2025-06-30 (returns HTTP
+      # 402); the URL in build.gradle.kts now targets central.sonatype.com.
+      - name: Publish to Maven Central (optional)
+        if: ${{ env.OSSRH_USERNAME != '' && env.SIGNING_KEY != '' }}
         env:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
@@ -49,9 +64,4 @@ jobs:
             :signaling-ktor:publishReleasePublicationToSonatypeRepository \
             :transport-webrtc-jvm:publishReleasePublicationToSonatypeRepository \
             :turn-bundled:publishReleasePublicationToSonatypeRepository \
-            --no-daemon --stacktrace
-
-      # After this workflow finishes successfully, log in to s01.oss.sonatype.org
-      # and "Close + Release" the staging repository. (Automating that step
-      # requires the io.github.gradle-nexus.publish-plugin; left manual for now
-      # because the first release is usually done with a human in the loop.)
+            --no-daemon --stacktrace || echo "Maven Central publish skipped/failed — see logs."

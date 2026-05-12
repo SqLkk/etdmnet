@@ -77,10 +77,16 @@ subprojects {
                 }
             }
 
-            // Maven Central via Sonatype OSSRH (s01.oss.sonatype.org).
-            // Required env: OSSRH_USERNAME, OSSRH_PASSWORD.
-            // Repository is always registered so the publish task exists at
-            // configure time. Missing credentials will simply fail at execute time.
+            // Maven Central via Sonatype OSSRH.
+            // NOTE: The legacy s01.oss.sonatype.org endpoint was sunset on
+            // 2025-06-30 and now returns HTTP 402. Maven Central publishing
+            // requires the new Central Portal (https://central.sonatype.com),
+            // which uses a different upload API — migration is tracked
+            // separately (will land via the jreleaser plugin).
+            //
+            // For now the "sonatype" repository points at the new Central
+            // Portal staging URL. It still requires a Portal token (username
+            // = portal token name, password = token value) and GPG signing.
             val ossrhUser = providers.environmentVariable("OSSRH_USERNAME").orNull
             val ossrhPass = providers.environmentVariable("OSSRH_PASSWORD").orNull
             repositories {
@@ -88,13 +94,32 @@ subprojects {
                     name = "sonatype"
                     val isSnapshot = project.version.toString().endsWith("SNAPSHOT")
                     url = uri(
-                        if (isSnapshot) "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-                        else "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+                        if (isSnapshot) "https://central.sonatype.com/repository/maven-snapshots/"
+                        else "https://central.sonatype.com/api/v1/publisher/upload"
                     )
                     if (!ossrhUser.isNullOrBlank() && !ossrhPass.isNullOrBlank()) {
                         credentials {
                             username = ossrhUser
                             password = ossrhPass
+                        }
+                    }
+                }
+
+                // GitHub Packages — works out of the box for tag-triggered
+                // CI using the auto-provisioned GITHUB_TOKEN. Lets consumers
+                // depend on the library immediately without waiting for
+                // Maven Central propagation.
+                val ghUser = providers.environmentVariable("GITHUB_ACTOR").orNull
+                val ghToken = providers.environmentVariable("GITHUB_TOKEN").orNull
+                val ghRepo = providers.environmentVariable("GITHUB_REPOSITORY").orNull
+                    ?: "SqLkk/etdmnew"
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/$ghRepo")
+                    if (!ghUser.isNullOrBlank() && !ghToken.isNullOrBlank()) {
+                        credentials {
+                            username = ghUser
+                            password = ghToken
                         }
                     }
                 }

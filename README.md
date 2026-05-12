@@ -94,11 +94,35 @@ gate the host-creation flow.
 In your Android app's `build.gradle.kts`:
 
 ```kotlin
+// Choose one of the two repositories below:
+
+repositories {
+    mavenCentral()                             // once 0.5 lands on Central
+
+    // OR — available right now from GitHub Packages:
+    maven {
+        url = uri("https://maven.pkg.github.com/SqLkk/etdmnew")
+        credentials {
+            username = providers.gradleProperty("gpr.user").orNull
+                ?: System.getenv("GITHUB_ACTOR")
+            password = providers.gradleProperty("gpr.token").orNull
+                ?: System.getenv("GITHUB_TOKEN")    // a PAT with read:packages
+        }
+    }
+
+    // OR — zero-setup via JitPack (auto-built from the git tag):
+    maven("https://jitpack.io")
+}
+
 dependencies {
+    // Coordinates when consumed from GitHub Packages / future Maven Central:
     implementation("dev.etdmnet:etdmnet-core:0.4.0-beta")
     implementation("dev.etdmnet:etdmnet-transport-webrtc-android:0.4.0-beta")
     implementation("dev.etdmnet:etdmnet-signaling-ktor:0.4.0-beta")
     implementation("dev.etdmnet:etdmnet-turn-bundled:0.4.0-beta")   // recommended
+
+    // OR — coordinates when consumed from JitPack:
+    // implementation("com.github.SqLkk.etdmnew:core:v0.4.0-beta")
 }
 ```
 
